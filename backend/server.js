@@ -105,6 +105,16 @@ app.post('/analyze', upload.single('historyFile'), (req, res) => {
 			size: req.file.size,
 		});
 
+	// Send back a small sample of parsed entries for verification
+	const sample = entries.slice(0, 5);
+	return res.json({
+		success: true,
+		filename: originalname,
+		bytes: size,
+		statistics: { totalVideos, uniqueChannels },
+		sample,
+	});
+
 		return res.json({ success: true, filename: originalname, bytes: size });
 });
 
