@@ -36,8 +36,16 @@ app.post('/analyze', upload.single('historyFile'), (req, res) => {
 		return res.status(400).json({ error: 'Invalid file type. Expected an HTML file.' });
 	}
 
-	// Placeholder: actual parsing and analysis will be implemented in later steps.
-	return res.json({ received: true, filename: originalname, bytes: size });
+		// Verification hook: log the uploaded file object (do not log content in prod)
+		// eslint-disable-next-line no-console
+		console.log('uploaded file:', {
+			fieldname: req.file.fieldname,
+			originalname: req.file.originalname,
+			mimetype: req.file.mimetype,
+			size: req.file.size,
+		});
+
+		return res.json({ success: true, filename: originalname, bytes: size });
 });
 
 // Multer and general error handler
