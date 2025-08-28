@@ -68,31 +68,72 @@ app.post('/analyze', upload.single('historyFile'), (req, res) => {
 						return parts[parts.length - 1];
 					}
 
-					$('a[href*="youtube.com/watch"], a[href*="/watch?v="]').each((i, el) => {
-						const $el = $(el);
-						const title = normalize($el.text());
-						if (!title) return;
+						$('a[href*="youtube.com/watch"], a[href*="/watch?v="]').each((i, el) => {
+							const $el = $(el);
 
-						let channel = null;
-						// attempt 1: look for channel in the same parent node
-						channel = extractChannelFromParent($el, title);
-
-						// attempt 2: look for a following sibling text node
-						if (!channel) {
-							const next = $el[0].nextSibling;
-							if (next && next.nodeType === 3) {
-								const t = normalize(next.nodeValue || '');
-								const cand = t.replace(/^[-:\s\u2014\u2013]+/, '');
-								if (cand) channel = cand;
+							// title: anchor text, or title/aria-label, or img alt
+							let title = normalize($el.text()) || normalize($el.attr('title')) || normalize($el.attr('aria-label')) || '';
+							if (!title) {
+								const imgAlt = $el.find('img[alt]').attr('alt');
+								title = normalize(imgAlt || '');
 							}
-						}
+							if (!title) return;
 
-						const key = `${title}:::${channel || ''}`;
-						if (seen.has(key)) return;
-						seen.add(key);
+							let channel = null;
 
-						entries.push({ title, channel: channel || null });
-					});
+							// 1) attempt: channel text in nearby, common selectors
+							const nearbySelectors = ['.yt-channel-name', '.channel-name', '.byline', '.subtitle', '.meta', 'small'];
+							for (const sel of nearbySelectors) {
+								const found = $el.closest('li,div,p').find(sel).first();
+								if (found && normalize(found.text())) {
+									channel = normalize(found.text());
+									break;
+								}
+							}
+
+							// 2) attempt: extract from parent text using separators
+							if (!channel) channel = extractChannelFromParent($el, title);
+
+							// 3) attempt: regex scan up the ancestor chain for 'by' or separators
+							if (!channel) {
+								let anc = $el.parent();
+								for (let depth = 0; depth < 4 && anc && anc.length; depth++) {
+									const text = normalize(anc.text().replace(title, ''));
+									if (text) {
+										const m = text.match(/(?:by|from|•|·|—|–|-|:|\|)\s*([^\n\r]+)/i);
+										if (m && m[1]) {
+											channel = normalize(m[1].split(/\n|\r/)[0]);
+											break;
+										}
+									}
+									anc = anc.parent();
+								}
+							}
+
+							// 4) attempt: check next/previous sibling text nodes
+							if (!channel) {
+								const next = $el[0].nextSibling;
+								if (next && next.nodeType === 3) {
+									const t = normalize(next.nodeValue || '');
+									const cand = t.replace(/^[-:\s\u2014\u2013]+/, '');
+									if (cand) channel = cand;
+								}
+								if (!channel) {
+									const prev = $el[0].previousSibling;
+									if (prev && prev.nodeType === 3) {
+										const t = normalize(prev.nodeValue || '');
+										const cand = t.replace(/^[-:\s\u2014\u2013]+/, '');
+										if (cand) channel = cand;
+									}
+								}
+							}
+
+							const key = `${title}:::${channel || ''}`;
+							if (seen.has(key)) return;
+							seen.add(key);
+
+							entries.push({ title, channel: channel || null });
+						});
 
 					const totalVideos = entries.length;
 					const uniqueChannels = new Set(entries.map(e => e.channel).filter(Boolean)).size;
