@@ -23,6 +23,33 @@ app.get('/', (req, res) => {
 	res.json({ status: 'ok', message: 'Aina AI backend running' });
 });
 
+// POST /analyze - receives watch-history.html via multipart/form-data (field: historyFile)
+app.post('/analyze', upload.single('historyFile'), (req, res) => {
+	// Basic validation: file present and appears to be HTML
+	if (!req.file) {
+		return res.status(400).json({ error: 'Missing file: historyFile' });
+	}
+
+	const { originalname = '', mimetype = '', size = 0 } = req.file;
+	const isHtml = mimetype.includes('html') || originalname.toLowerCase().endsWith('.html');
+	if (!isHtml) {
+		return res.status(400).json({ error: 'Invalid file type. Expected an HTML file.' });
+	}
+
+	// Placeholder: actual parsing and analysis will be implemented in later steps.
+	return res.json({ received: true, filename: originalname, bytes: size });
+});
+
+// Multer and general error handler
+app.use((err, req, res, next) => {
+	if (err && err.name === 'MulterError') {
+		return res.status(400).json({ error: err.message });
+	}
+	// eslint-disable-next-line no-console
+	console.error(err);
+	res.status(500).json({ error: 'internal_server_error' });
+});
+
 app.listen(PORT, () => {
 	// eslint-disable-next-line no-console
 	console.log(`Aina AI backend listening on http://localhost:${PORT}`);
