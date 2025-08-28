@@ -3,6 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
+const cheerio = require('cheerio');
 
 const app = express();
 app.use(cors());
@@ -36,8 +37,18 @@ app.post('/analyze', upload.single('historyFile'), (req, res) => {
 		return res.status(400).json({ error: 'Invalid file type. Expected an HTML file.' });
 	}
 
-			// Read uploaded file content (utf-8) for parsing in later steps
-			const html = req.file.buffer.toString('utf-8');
+				// Read uploaded file content (utf-8) for parsing in later steps
+				const html = req.file.buffer.toString('utf-8');
+
+				// Load into Cheerio for parsing
+				let $;
+				try {
+					$ = cheerio.load(html);
+				} catch (err) {
+					// eslint-disable-next-line no-console
+					console.error('cheerio parse error:', err && err.message);
+					return res.status(400).json({ error: 'failed_to_parse_html' });
+				}
 			// Verification hook: log the uploaded file object (do not log content in prod)
 		// eslint-disable-next-line no-console
 		console.log('uploaded file:', {
