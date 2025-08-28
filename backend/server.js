@@ -49,6 +49,53 @@ app.post('/analyze', upload.single('historyFile'), (req, res) => {
 					console.error('cheerio parse error:', err && err.message);
 					return res.status(400).json({ error: 'failed_to_parse_html' });
 				}
+
+					// Parse watch entries: look for anchor tags that point to YouTube watch pages
+					const entries = [];
+					const seen = new Set();
+
+					function normalize(s) {
+						return (s || '').replace(/\s+/g, ' ').trim();
+					}
+
+					function extractChannelFromParent($el, title) {
+						const parentText = normalize($el.parent().text().replace(title, ''));
+						if (!parentText) return null;
+						// split by common separators and take the last non-empty segment
+						const parts = parentText.split(/—|–|-|\u2014|\u2013|:/).map(p => normalize(p)).filter(Boolean);
+						if (parts.length === 0) return null;
+						// prefer the last part as channel name
+						return parts[parts.length - 1];
+					}
+
+					$('a[href*="youtube.com/watch"], a[href*="/watch?v="]').each((i, el) => {
+						const $el = $(el);
+						const title = normalize($el.text());
+						if (!title) return;
+
+						let channel = null;
+						// attempt 1: look for channel in the same parent node
+						channel = extractChannelFromParent($el, title);
+
+						// attempt 2: look for a following sibling text node
+						if (!channel) {
+							const next = $el[0].nextSibling;
+							if (next && next.nodeType === 3) {
+								const t = normalize(next.nodeValue || '');
+								const cand = t.replace(/^[-:\s\u2014\u2013]+/, '');
+								if (cand) channel = cand;
+							}
+						}
+
+						const key = `${title}:::${channel || ''}`;
+						if (seen.has(key)) return;
+						seen.add(key);
+
+						entries.push({ title, channel: channel || null });
+					});
+
+					const totalVideos = entries.length;
+					const uniqueChannels = new Set(entries.map(e => e.channel).filter(Boolean)).size;
 			// Verification hook: log the uploaded file object (do not log content in prod)
 		// eslint-disable-next-line no-console
 		console.log('uploaded file:', {
