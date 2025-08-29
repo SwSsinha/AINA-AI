@@ -132,7 +132,7 @@ app.post('/analyze', upload.single('historyFile'), async (req, res) => { // Adde
         const statistics = { totalVideos, uniqueChannels };
 
         // (AI and further steps remain unchanged for now)
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         const prompt = createAnalysisPrompt(allTitles);
         const result = await model.generateContent(prompt);
         const response = await result.response;
