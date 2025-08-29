@@ -22,13 +22,28 @@ const upload = multer({ storage });
 // --- Helper Functions ---
 function createAnalysisPrompt(videoTitles) {
     const prompt = `
-        Analyze the following list of YouTube video titles and return a JSON object with two keys: "sentimentAnalysis" and "topicAnalysis".
-        - "sentimentAnalysis" should contain the percentage of "Positive", "Negative", and "Neutral" titles.
-        - "topicAnalysis" should be an array of the top 5 topics with their estimated counts.
-        IMPORTANT: Your output must be only the raw JSON object, with no extra text or markdown.
+        You are an expert digital wellness analyst. Analyze the following list of YouTube video titles and return a JSON object with three keys: "sentimentAnalysis", "topicAnalysis", and "suggestions".
 
-        Titles:
+        Here is the list of video titles:
         ${videoTitles.join('\n')}
+
+        Based on this list, perform the following three tasks:
+
+        1.  **Sentiment Analysis:**
+            Classify the overall emotional tone. Estimate the percentage of titles that fall into "Positive", "Negative", and "Neutral".
+
+        2.  **Topic Analysis:**
+            Identify the top 5 most frequent topics and their estimated counts.
+
+        3.  **Actionable Suggestions:**
+            Based on the sentiment and topic analysis, provide 2-3 brief, actionable suggestions for the user to improve their digital well-being or explore new content. Frame these as helpful tips, not commands.
+
+        IMPORTANT: Your final output must be ONLY a valid JSON object. Do not include any other text or markdown. The JSON object must follow this exact structure:
+        {
+          "sentimentAnalysis": { "positivePercent": <number>, "negativePercent": <number>, "neutralPercent": <number> },
+          "topicAnalysis": [ { "topic": "<string>", "count": <number> } ],
+          "suggestions": [ "<string>", "<string>", "<string>" ]
+        }
     `;
     return prompt;
 }
@@ -76,9 +91,11 @@ app.post('/analyze', upload.single('historyFile'), async (req, res) => {
             }
         });
 
-        // == PHASE 4 & 5: AI ANALYSIS & FINAL REPORT ==
-        const allTitles = extractedVideos.map(v => v.title);
-        
+        // Shuffle the array to get a random sample
+        const shuffledVideos = extractedVideos.sort(() => 0.5 - Math.random());
+        // Take a sample of 300 videos and get their titles
+        const allTitles = shuffledVideos.slice(0, 300).map(v => v.title);
+
         // CORRECT API CALL SYNTAX
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash', // CORRECT model name
@@ -101,7 +118,9 @@ app.post('/analyze', upload.single('historyFile'), async (req, res) => {
             statistics,
             sentimentAnalysis: aiResults.sentimentAnalysis,
             topicAnalysis: aiResults.topicAnalysis,
-            sourceDiversity
+            sourceDiversity,
+            suggestions: aiResults.suggestions
+
         };
 
         res.json(finalReport);
