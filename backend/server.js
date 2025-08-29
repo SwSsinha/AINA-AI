@@ -1,48 +1,67 @@
-// --- Gemini API Test Function ---
-async function testGeminiConnection() {
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: 'Hello, world',
-        });
-        console.log('Gemini API test response:', response.text);
-    } catch (error) {
-        console.error('Gemini API test failed:', error);
-    }
-}
-require('dotenv').config();
+require('dotenv').config(); // This MUST be the first line
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
-
-// Gemini API setup
-const { GoogleGenAI } = require('@google/genai');
 const cheerio = require('cheerio');
-// Initialize Gemini client (API key is read from GEMINI_API_KEY env variable)
-const ai = new GoogleGenAI({});
+const { GoogleGenerativeAI } = require("@google/generative-ai"); // Correct SDK import
+
+// --- Initialize Gemini Client ---
+// Use your API key from the .env file
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 // --- Middleware Setup ---
-app.use(cors()); // Allows your React frontend to talk to this backend
-app.use(express.json()); // Allows us to read JSON in request bodies
+app.use(cors());
+app.use(express.json());
 
 // --- File Upload Setup (Multer) ---
-// We'll store the uploaded file in memory so we can process it directly
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// --- API Routes ---
+// --- Helper Function for AI Prompt ---
+function createAnalysisPrompt(videoTitles) {
+    // This prompt instructs the AI to return a clean JSON object, which is easy to parse.
+    const prompt = `
+        You are an expert digital wellness analyst. I have provided a list of YouTube video titles from a user's watch history. Your task is to perform a detailed analysis and return a summary in a specific JSON format.
 
-// A simple root route to check if the server is running
+        Here is the list of video titles:
+        ${videoTitles.join('\n')}
+
+        Based on this list, perform the following two analyses:
+
+        1.  **Sentiment Analysis:**
+            Classify the overall emotional tone of the content. Estimate the percentage of titles that fall into these categories: "Positive", "Negative", and "Neutral". The total must sum to 100.
+
+        2.  **Topic Analysis:**
+            Identify the top 5 most frequent topics or themes. For each topic, provide the topic name and an estimated count of videos related to it.
+
+        IMPORTANT: Your final output must be ONLY a valid JSON object. Do not include any other text, explanations, or markdown formatting like \`\`\`json. The JSON object must follow this exact structure:
+        {
+          "sentimentAnalysis": {
+            "positivePercent": <number>,
+            "negativePercent": <number>,
+            "neutralPercent": <number>
+          },
+          "topicAnalysis": [
+            { "topic": "<string>", "count": <number> },
+            { "topic": "<string>", "count": <number> },
+            { "topic": "<string>", "count": <number> },
+            { "topic": "<string>", "count": <number> },
+            { "topic": "<string>", "count": <number> }
+          ]
+        }
+    `;
+    return prompt;
+}
+
+// --- API Routes ---
 app.get('/', (req, res) => {
     res.json({ message: 'Aina AI backend is running!' });
 });
 
-// The main endpoint for analyzing the user's history file
-app.post('/analyze', upload.single('historyFile'), async (req, res) => {
-    // 1. --- Validate the File ---
+app.post('/analyze', upload.single('historyFile'), async (req, res) => { // Added 'async'
     if (!req.file) {
         return res.status(400).json({ error: 'No file was uploaded.' });
     }
@@ -51,23 +70,17 @@ app.post('/analyze', upload.single('historyFile'), async (req, res) => {
     }
 
     try {
-        // 2. --- Parse the HTML ---
         const htmlContent = req.file.buffer.toString('utf-8');
         const $ = cheerio.load(htmlContent);
-
         const extractedVideos = [];
-        const seen = new Set(); // To handle potential duplicate entries in the history file
-
+        const seen = new Set();
         const videoEntries = $('.content-cell.mdl-cell.mdl-cell--6-col.mdl-typography--body-1');
 
         videoEntries.each((index, element) => {
             const links = $(element).find('a');
-
             if (links.length >= 2) {
                 const title = $(links[0]).text().trim();
                 const channel = $(links[1]).text().trim();
-                
-                // Deduplication logic
                 const key = `${title}:::${channel}`;
                 if (title && !seen.has(key)) {
                     seen.add(key);
@@ -76,54 +89,30 @@ app.post('/analyze', upload.single('historyFile'), async (req, res) => {
             }
         });
 
+        // --- AI Analysis Step ---
+        // CRITICAL FIX: Send ALL titles to the AI, not just a small slice.
+        const allTitles = extractedVideos.map(v => v.title);
+        
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); // Correct model name
+        const prompt = createAnalysisPrompt(allTitles);
+        
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const aiResponseText = response.text();
 
-        // 3. --- Calculate Basic Statistics ---
-        const totalVideos = extractedVideos.length;
-        const uniqueChannels = new Set(extractedVideos.map(v => v.channel)).size;
-
-        // 4. --- Construct Gemini Prompt ---
-        // We'll use the first 50 videos for the prompt to keep it concise (adjust as needed)
-        const promptVideos = extractedVideos.slice(0, 50);
-        const videoListText = promptVideos.map((v, i) => `${i + 1}. "${v.title}" by ${v.channel}`).join('\n');
-
-        const geminiPrompt = [
-            "You are an expert YouTube content analyst.",
-            "Given the following list of videos watched by a user, provide:",
-            "1. A summary of the main topics and themes present in the user's watch history.",
-            "2. An overall sentiment analysis (positive, negative, neutral, or mixed) of the content.",
-            "3. Any notable patterns or interests you observe.",
-            "4. (Optional) Suggestions for new topics or channels the user might enjoy.",
-            "\nHere is the user's watch history:",
-            videoListText
-        ].join('\n');
-
-        // The geminiPrompt variable is now ready to be used in the next step for the Gemini API call.
-
-        // 5. --- Call Gemini API with the prompt ---
-        try {
-            const geminiResponse = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: geminiPrompt,
-            });
-            console.log('Gemini API raw response:', geminiResponse.text);
-        } catch (err) {
-            console.error('Error calling Gemini API:', err);
-        }
-
-        // 6. --- Send the Response (unchanged for now) ---
+        console.log("--- Raw AI Response ---");
+        console.log(aiResponseText);
+        
+        // --- Prepare Final Response ---
+        // For now, we will just confirm it works and show the raw text. 
+        // In Phase 5, we'll parse this text.
         res.json({
-            success: true,
-            filename: req.file.originalname,
-            statistics: {
-                totalVideos,
-                uniqueChannels
-            },
-            // Send a small sample back to the client for preview
-            sample: extractedVideos.slice(0, 5)
+            message: "AI analysis completed successfully!",
+            rawAIResponse: aiResponseText
         });
 
     } catch (error) {
-        console.error('Error during file processing:', error);
+        console.error('Error during processing:', error);
         res.status(500).json({ error: 'Failed to process the file.' });
     }
 });
@@ -131,5 +120,4 @@ app.post('/analyze', upload.single('historyFile'), async (req, res) => {
 // --- Start the Server ---
 app.listen(PORT, () => {
     console.log(`Aina AI backend listening on http://localhost:${PORT}`);
-    testGeminiConnection();
 });
