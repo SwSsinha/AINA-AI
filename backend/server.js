@@ -141,12 +141,20 @@ app.post('/analyze', upload.single('historyFile'), async (req, res) => { // Adde
         console.log("--- Raw AI Response ---");
         console.log(aiResponseText);
 
-        // For now, just return the statistics and raw AI response for verification
-        res.json({
-            message: "AI analysis completed successfully!",
+        // --- Parse Gemini AI Response ---
+        const geminiResults = parseGeminiResponse(aiResponseText);
+
+        // --- Source Diversity ---
+        const sourceDiversity = calculateSourceDiversity(extractedVideos);
+
+        // --- Final Report Object ---
+        const finalReport = {
             statistics,
-            rawAIResponse: aiResponseText
-        });
+            sourceDiversity,
+            geminiResults
+        };
+
+        res.json(finalReport);
 
     } catch (error) {
         console.error('Error during processing:', error);
