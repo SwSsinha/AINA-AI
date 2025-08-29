@@ -1,3 +1,29 @@
+// --- Gemini AI Response Parsing ---
+function parseGeminiResponse(rawText) {
+    if (!rawText) return null;
+    // Remove markdown/code block wrappers if present
+    let cleaned = rawText.trim();
+    if (cleaned.startsWith('```json')) {
+        cleaned = cleaned.replace(/^```json/, '').replace(/```$/, '').trim();
+    } else if (cleaned.startsWith('```')) {
+        cleaned = cleaned.replace(/^```/, '').replace(/```$/, '').trim();
+    }
+    // Try to parse JSON
+    try {
+        return JSON.parse(cleaned);
+    } catch (e) {
+        // If parsing fails, try to extract the first JSON object from the text
+        const match = cleaned.match(/\{[\s\S]*\}/);
+        if (match) {
+            try {
+                return JSON.parse(match[0]);
+            } catch (err) {
+                return null;
+            }
+        }
+        return null;
+    }
+}
 // --- Source Diversity Calculation ---
 function calculateSourceDiversity(videos) {
     if (!videos || videos.length === 0) return 0;
