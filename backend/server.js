@@ -125,22 +125,26 @@ app.post('/analyze', upload.single('historyFile'), async (req, res) => { // Adde
         // --- AI Analysis Step ---
         // CRITICAL FIX: Send ALL titles to the AI, not just a small slice.
         const allTitles = extractedVideos.map(v => v.title);
-        
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); // Correct model name
+
+        // --- Statistics Object ---
+        const totalVideos = extractedVideos.length;
+        const uniqueChannels = new Set(extractedVideos.map(v => v.channel)).size;
+        const statistics = { totalVideos, uniqueChannels };
+
+        // (AI and further steps remain unchanged for now)
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const prompt = createAnalysisPrompt(allTitles);
-        
         const result = await model.generateContent(prompt);
         const response = await result.response;
         const aiResponseText = response.text();
 
         console.log("--- Raw AI Response ---");
         console.log(aiResponseText);
-        
-        // --- Prepare Final Response ---
-        // For now, we will just confirm it works and show the raw text. 
-        // In Phase 5, we'll parse this text.
+
+        // For now, just return the statistics and raw AI response for verification
         res.json({
             message: "AI analysis completed successfully!",
+            statistics,
             rawAIResponse: aiResponseText
         });
 
