@@ -41,7 +41,7 @@ app.get('/', (req, res) => {
 });
 
 // The main endpoint for analyzing the user's history file
-app.post('/analyze', upload.single('historyFile'), (req, res) => {
+app.post('/analyze', upload.single('historyFile'), async (req, res) => {
     // 1. --- Validate the File ---
     if (!req.file) {
         return res.status(400).json({ error: 'No file was uploaded.' });
@@ -99,7 +99,18 @@ app.post('/analyze', upload.single('historyFile'), (req, res) => {
 
         // The geminiPrompt variable is now ready to be used in the next step for the Gemini API call.
 
-        // 5. --- Send the Response (unchanged for now) ---
+        // 5. --- Call Gemini API with the prompt ---
+        try {
+            const geminiResponse = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: geminiPrompt,
+            });
+            console.log('Gemini API raw response:', geminiResponse.text);
+        } catch (err) {
+            console.error('Error calling Gemini API:', err);
+        }
+
+        // 6. --- Send the Response (unchanged for now) ---
         res.json({
             success: true,
             filename: req.file.originalname,
