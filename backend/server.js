@@ -1,3 +1,10 @@
+// --- Source Diversity Calculation ---
+function calculateSourceDiversity(videos) {
+    if (!videos || videos.length === 0) return 0;
+    const uniqueChannels = new Set(videos.map(v => v.channel)).size;
+    // Source Diversity as a percentage of unique channels out of total videos
+    return Number(((uniqueChannels / videos.length) * 100).toFixed(2));
+}
 require('dotenv').config(); // This MUST be the first line
 const express = require('express');
 const cors = require('cors');
