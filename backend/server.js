@@ -2,7 +2,12 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
+
+// Gemini API setup
+const { GoogleGenAI } = require('@google/genai');
 const cheerio = require('cheerio');
+// Initialize Gemini client (API key is read from GEMINI_API_KEY env variable)
+const ai = new GoogleGenAI({});
 
 const app = express();
 const PORT = process.env.PORT || 3001;
