@@ -76,11 +76,30 @@ app.post('/analyze', upload.single('historyFile'), (req, res) => {
             }
         });
 
+
         // 3. --- Calculate Basic Statistics ---
         const totalVideos = extractedVideos.length;
         const uniqueChannels = new Set(extractedVideos.map(v => v.channel)).size;
 
-        // 4. --- Send the Response ---
+        // 4. --- Construct Gemini Prompt ---
+        // We'll use the first 50 videos for the prompt to keep it concise (adjust as needed)
+        const promptVideos = extractedVideos.slice(0, 50);
+        const videoListText = promptVideos.map((v, i) => `${i + 1}. "${v.title}" by ${v.channel}`).join('\n');
+
+        const geminiPrompt = [
+            "You are an expert YouTube content analyst.",
+            "Given the following list of videos watched by a user, provide:",
+            "1. A summary of the main topics and themes present in the user's watch history.",
+            "2. An overall sentiment analysis (positive, negative, neutral, or mixed) of the content.",
+            "3. Any notable patterns or interests you observe.",
+            "4. (Optional) Suggestions for new topics or channels the user might enjoy.",
+            "\nHere is the user's watch history:",
+            videoListText
+        ].join('\n');
+
+        // The geminiPrompt variable is now ready to be used in the next step for the Gemini API call.
+
+        // 5. --- Send the Response (unchanged for now) ---
         res.json({
             success: true,
             filename: req.file.originalname,
@@ -89,7 +108,7 @@ app.post('/analyze', upload.single('historyFile'), (req, res) => {
                 uniqueChannels
             },
             // Send a small sample back to the client for preview
-            sample: extractedVideos.slice(0, 5) 
+            sample: extractedVideos.slice(0, 5)
         });
 
     } catch (error) {
