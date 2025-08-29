@@ -1,168 +1,118 @@
-// --- Gemini AI Response Parsing ---
-function parseGeminiResponse(rawText) {
-    if (!rawText) return null;
-    // Remove markdown/code block wrappers if present
-    let cleaned = rawText.trim();
-    if (cleaned.startsWith('```json')) {
-        cleaned = cleaned.replace(/^```json/, '').replace(/```$/, '').trim();
-    } else if (cleaned.startsWith('```')) {
-        cleaned = cleaned.replace(/^```/, '').replace(/```$/, '').trim();
-    }
-    // Try to parse JSON
-    try {
-        return JSON.parse(cleaned);
-    } catch (e) {
-        // If parsing fails, try to extract the first JSON object from the text
-        const match = cleaned.match(/\{[\s\S]*\}/);
-        if (match) {
-            try {
-                return JSON.parse(match[0]);
-            } catch (err) {
-                return null;
-            }
-        }
-        return null;
-    }
-}
-// --- Source Diversity Calculation ---
-function calculateSourceDiversity(videos) {
-    if (!videos || videos.length === 0) return 0;
-    const uniqueChannels = new Set(videos.map(v => v.channel)).size;
-    // Source Diversity as a percentage of unique channels out of total videos
-    return Number(((uniqueChannels / videos.length) * 100).toFixed(2));
-}
-require('dotenv').config(); // This MUST be the first line
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
 const cheerio = require('cheerio');
-const { GoogleGenerativeAI } = require("@google/generative-ai"); // Correct SDK import
+// CORRECT SDK IMPORT based on your documentation
+const { GoogleGenAI } = require('@google/genai');
 
-// --- Initialize Gemini Client ---
-// Use your API key from the .env file
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// --- Initialize Gemini Client (New Syntax) ---
+// The API key from .env is picked up automatically by the new SDK
+const ai = new GoogleGenAI({});
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// --- Middleware Setup ---
+// --- Middleware & File Upload ---
 app.use(cors());
 app.use(express.json());
-
-// --- File Upload Setup (Multer) ---
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// --- Helper Function for AI Prompt ---
+// --- Helper Functions ---
 function createAnalysisPrompt(videoTitles) {
-    // This prompt instructs the AI to return a clean JSON object, which is easy to parse.
     const prompt = `
-        You are an expert digital wellness analyst. I have provided a list of YouTube video titles from a user's watch history. Your task is to perform a detailed analysis and return a summary in a specific JSON format.
+        Analyze the following list of YouTube video titles and return a JSON object with two keys: "sentimentAnalysis" and "topicAnalysis".
+        - "sentimentAnalysis" should contain the percentage of "Positive", "Negative", and "Neutral" titles.
+        - "topicAnalysis" should be an array of the top 5 topics with their estimated counts.
+        IMPORTANT: Your output must be only the raw JSON object, with no extra text or markdown.
 
-        Here is the list of video titles:
+        Titles:
         ${videoTitles.join('\n')}
-
-        Based on this list, perform the following two analyses:
-
-        1.  **Sentiment Analysis:**
-            Classify the overall emotional tone of the content. Estimate the percentage of titles that fall into these categories: "Positive", "Negative", and "Neutral". The total must sum to 100.
-
-        2.  **Topic Analysis:**
-            Identify the top 5 most frequent topics or themes. For each topic, provide the topic name and an estimated count of videos related to it.
-
-        IMPORTANT: Your final output must be ONLY a valid JSON object. Do not include any other text, explanations, or markdown formatting like \`\`\`json. The JSON object must follow this exact structure:
-        {
-          "sentimentAnalysis": {
-            "positivePercent": <number>,
-            "negativePercent": <number>,
-            "neutralPercent": <number>
-          },
-          "topicAnalysis": [
-            { "topic": "<string>", "count": <number> },
-            { "topic": "<string>", "count": <number> },
-            { "topic": "<string>", "count": <number> },
-            { "topic": "<string>", "count": <number> },
-            { "topic": "<string>", "count": <number> }
-          ]
-        }
     `;
     return prompt;
 }
 
-// --- API Routes ---
-app.get('/', (req, res) => {
-    res.json({ message: 'Aina AI backend is running!' });
-});
+function parseGeminiResponse(rawText) {
+    try {
+        let cleanedText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+        return JSON.parse(cleanedText);
+    } catch (error) {
+        console.error("Failed to parse AI response:", error);
+        return null;
+    }
+}
 
-app.post('/analyze', upload.single('historyFile'), async (req, res) => { // Added 'async'
+function calculateSourceDiversity(videos) {
+    const channelCounts = new Map();
+    videos.forEach(video => {
+        channelCounts.set(video.channel, (channelCounts.get(video.channel) || 0) + 1);
+    });
+    return Array.from(channelCounts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([channel, count]) => ({ channel, count }));
+}
+
+// --- API Routes ---
+app.post('/analyze', upload.single('historyFile'), async (req, res) => {
     if (!req.file) {
         return res.status(400).json({ error: 'No file was uploaded.' });
     }
-    if (!req.file.originalname.toLowerCase().endsWith('.html')) {
-        return res.status(400).json({ error: 'Invalid file type. Please upload your watch-history.html file.' });
-    }
 
     try {
+        // == PHASE 3: PARSE HTML ==
         const htmlContent = req.file.buffer.toString('utf-8');
         const $ = cheerio.load(htmlContent);
         const extractedVideos = [];
-        const seen = new Set();
-        const videoEntries = $('.content-cell.mdl-cell.mdl-cell--6-col.mdl-typography--body-1');
-
-        videoEntries.each((index, element) => {
-            const links = $(element).find('a');
+        $('.content-cell.mdl-cell.mdl-cell--6-col.mdl-typography--body-1').each((i, el) => {
+            const links = $(el).find('a');
             if (links.length >= 2) {
                 const title = $(links[0]).text().trim();
                 const channel = $(links[1]).text().trim();
-                const key = `${title}:::${channel}`;
-                if (title && !seen.has(key)) {
-                    seen.add(key);
+                if (title && channel) {
                     extractedVideos.push({ title, channel });
                 }
             }
         });
 
-        // --- AI Analysis Step ---
-        // CRITICAL FIX: Send ALL titles to the AI, not just a small slice.
+        // == PHASE 4 & 5: AI ANALYSIS & FINAL REPORT ==
         const allTitles = extractedVideos.map(v => v.title);
+        
+        // CORRECT API CALL SYNTAX
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash', // CORRECT model name
+            contents: createAnalysisPrompt(allTitles),
+        });
 
-        // --- Statistics Object ---
-        const totalVideos = extractedVideos.length;
-        const uniqueChannels = new Set(extractedVideos.map(v => v.channel)).size;
-        const statistics = { totalVideos, uniqueChannels };
+        const aiResults = parseGeminiResponse(response.text);
+        if (!aiResults) {
+            throw new Error("Failed to parse the response from the AI model.");
+        }
 
-        // (AI and further steps remain unchanged for now)
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-        const prompt = createAnalysisPrompt(allTitles);
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const aiResponseText = response.text();
-
-        console.log("--- Raw AI Response ---");
-        console.log(aiResponseText);
-
-        // --- Parse Gemini AI Response ---
-        const geminiResults = parseGeminiResponse(aiResponseText);
-
-        // --- Source Diversity ---
+        const statistics = {
+            totalVideos: extractedVideos.length,
+            uniqueChannels: new Set(extractedVideos.map(v => v.channel)).size
+        };
+        
         const sourceDiversity = calculateSourceDiversity(extractedVideos);
 
-        // --- Final Report Object ---
         const finalReport = {
             statistics,
-            sourceDiversity,
-            geminiResults
+            sentimentAnalysis: aiResults.sentimentAnalysis,
+            topicAnalysis: aiResults.topicAnalysis,
+            sourceDiversity
         };
 
         res.json(finalReport);
 
     } catch (error) {
         console.error('Error during processing:', error);
-        res.status(500).json({ error: 'Failed to process the file.' });
+        res.status(500).json({ error: 'An error occurred during analysis.' });
     }
 });
 
-// --- Start the Server ---
+// --- Start Server ---
 app.listen(PORT, () => {
-    console.log(`Aina AI backend listening on http://localhost:${PORT}`);
+    console.log(`🚀 Aina AI backend is live and listening on http://localhost:${PORT}`);
 });
