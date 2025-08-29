@@ -1,3 +1,15 @@
+// --- Gemini API Test Function ---
+async function testGeminiConnection() {
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: 'Hello, world',
+        });
+        console.log('Gemini API test response:', response.text);
+    } catch (error) {
+        console.error('Gemini API test failed:', error);
+    }
+}
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -89,4 +101,5 @@ app.post('/analyze', upload.single('historyFile'), (req, res) => {
 // --- Start the Server ---
 app.listen(PORT, () => {
     console.log(`Aina AI backend listening on http://localhost:${PORT}`);
+    testGeminiConnection();
 });
